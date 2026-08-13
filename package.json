@@ -1,0 +1,20 @@
+{
+  "name": "ake-revenue-intelligence",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "build": "npm run build -w @ake/contracts && npm run build -w @ake/revenue-core && npm run build -w @ake/workspace-web",
+    "dev": "npm run dev -w @ake/workspace-web",
+    "dev:api": "npm run dev -w @ake/revenue-core",
+    "dev:worker": "npm run dev:worker -w @ake/revenue-core",
+    "migrate": "npm run migrate -w @ake/revenue-core",
+    "test": "npm run test:requirements && npm run test -w @ake/contracts && npm run test -w @ake/revenue-core && npm run test -w @ake/workspace-web",
+    "test:requirements": "node --test apps/requirement-engine/*.test.mjs",
+    "smoke:requirements": "node scripts/smoke-requirement-integration.mjs",
+    "verify:isolation": "node scripts/verify-compose-isolation.mjs",
+    "check:public": "node scripts/public-release-check.mjs",
+    "typecheck": "npm run build -w @ake/contracts && npm run typecheck -w @ake/revenue-core && npm run typecheck -w @ake/workspace-web"
+  }
+}

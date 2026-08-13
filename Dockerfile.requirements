@@ -1,0 +1,9 @@
+FROM node:24-bookworm-slim
+WORKDIR /app
+COPY apps/requirement-engine ./apps/requirement-engine
+RUN mkdir -p /runtime-qmd && chown -R node:node /runtime-qmd /app && chmod +x /app/apps/requirement-engine/entrypoint.sh
+ENV NODE_ENV=production
+ENV PORT=4200
+ENV QMD_CONFIG_DIR=/runtime-qmd
+USER node
+ENTRYPOINT ["/app/apps/requirement-engine/entrypoint.sh"]

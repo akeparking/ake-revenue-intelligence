@@ -1,0 +1,11 @@
+**/node_modules
+**/.next
+!apps/workspace-web/.next
+!apps/workspace-web/.next/**
+**/.vite
+**/*.tsbuildinfo
+.git
+.env
+.env.*
+coverage
+*.log

@@ -1,0 +1,106 @@
+name: ake-revenue-webhook
+
+x-core-env: &core-env
+  NODE_ENV: production
+  PORT: 4100
+  STORE_DRIVER: postgres
+  DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/revenue_crm
+  DEFAULT_WORKSPACE_ID: ake-demo
+  DEFAULT_USER_ID: ake-admin
+  API_AUTH_MODE: api-key
+  API_KEY: ${API_KEY}
+  DEMO_SEED: "false"
+  ADS_MODE: mock
+  AI_AUTO_SEND: "false"
+  FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY}
+  OKKI_SYNC_ENABLED: "false"
+
+x-log: &default-log
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - max_connections=30
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: revenue_crm
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d revenue_crm"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+    mem_limit: 256m
+    logging: *default-log
+    networks: [internal]
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: deploy/webhook-only/Dockerfile
+    environment: *core-env
+    command: ["node", "apps/revenue-core/dist/database/migrate.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    mem_limit: 192m
+    logging: *default-log
+    networks: [internal]
+
+  revenue-core:
+    build:
+      context: ../..
+      dockerfile: deploy/webhook-only/Dockerfile
+    restart: unless-stopped
+    environment: *core-env
+    ports:
+      - "127.0.0.1:4100:4100"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4100/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 4s
+      retries: 12
+    mem_limit: 256m
+    logging: *default-log
+    networks: [internal]
+
+  revenue-worker:
+    build:
+      context: ../..
+      dockerfile: deploy/webhook-only/Dockerfile
+    restart: unless-stopped
+    environment: *core-env
+    command: ["node", "apps/revenue-core/dist/worker.js"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    mem_limit: 192m
+    logging: *default-log
+    networks: [internal]
+
+networks:
+  internal:
+    internal: true
+
+volumes:
+  postgres-data:

@@ -1,0 +1,19 @@
+FROM node:24-bookworm-slim AS build
+WORKDIR /app
+COPY package.json package-lock.json* tsconfig.base.json ./
+COPY packages/contracts/package.json packages/contracts/package.json
+COPY apps/workspace-web/package.json apps/workspace-web/package.json
+RUN npm install --include=dev
+COPY packages/contracts packages/contracts
+COPY apps/workspace-web apps/workspace-web
+RUN npm run build -w @ake/contracts && npm run build -w @ake/workspace-web
+
+FROM node:24-bookworm-slim AS runtime
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+WORKDIR /app
+COPY --from=build /app/apps/workspace-web/.next/standalone ./
+COPY --from=build /app/apps/workspace-web/.next/static ./apps/workspace-web/.next/static
+USER node
+CMD ["node", "apps/workspace-web/server.js"]

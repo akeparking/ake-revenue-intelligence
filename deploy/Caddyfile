@@ -1,0 +1,29 @@
+{$APP_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy workspace-web:3000
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "strict-origin-when-cross-origin"
+  }
+}
+
+{$API_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy revenue-core:4100
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "strict-origin-when-cross-origin"
+  }
+}
+
+{$CHATWOOT_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy chatwoot-web:3000
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "strict-origin-when-cross-origin"
+  }
+}

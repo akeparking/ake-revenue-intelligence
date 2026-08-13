@@ -1,0 +1,2 @@
+CREATE DATABASE revenue_crm;
+CREATE DATABASE chatwoot;

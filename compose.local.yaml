@@ -1,0 +1,74 @@
+services:
+  postgres:
+    cpus: "2.00"
+    mem_limit: 768m
+    pids_limit: 256
+
+  redis:
+    cpus: "0.50"
+    mem_limit: 256m
+    pids_limit: 128
+
+  revenue-migrate:
+    cpus: "1.00"
+    mem_limit: 512m
+    pids_limit: 256
+
+  revenue-core:
+    cpus: "1.50"
+    mem_limit: 512m
+    pids_limit: 256
+    ports:
+      - "127.0.0.1:4100:4100"
+
+  revenue-worker:
+    cpus: "1.50"
+    mem_limit: 512m
+    pids_limit: 256
+
+  requirement-engine:
+    cpus: "1.00"
+    mem_limit: 512m
+    pids_limit: 128
+
+  workspace-web:
+    cpus: "1.00"
+    mem_limit: 384m
+    pids_limit: 128
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      SERVER_API_URL: http://revenue-core:4100
+      API_KEY: ${API_KEY}
+      DEFAULT_WORKSPACE_ID: ake-demo
+      DEFAULT_USER_ID: ake-admin
+      NEXT_PUBLIC_CHATWOOT_APP_URL: http://127.0.0.1:3001
+
+  chatwoot-web:
+    cpus: "2.00"
+    mem_limit: 1g
+    pids_limit: 512
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      FRONTEND_URL: http://127.0.0.1:3001
+
+  chatwoot-worker:
+    cpus: "2.00"
+    mem_limit: 1g
+    pids_limit: 512
+    environment:
+      FRONTEND_URL: http://127.0.0.1:3001
+
+  chatwoot-migrate:
+    cpus: "2.00"
+    mem_limit: 1536m
+    pids_limit: 512
+    environment:
+      FRONTEND_URL: http://127.0.0.1:3001
+
+  caddy:
+    profiles: ["production"]
+
+  backup-agent:
+    profiles: ["production"]

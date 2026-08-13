@@ -1,0 +1,20 @@
+FROM node:24-bookworm-slim AS build
+WORKDIR /app
+COPY package.json package-lock.json* tsconfig.base.json ./
+COPY packages/contracts/package.json packages/contracts/package.json
+COPY apps/revenue-core/package.json apps/revenue-core/package.json
+RUN npm install --include=dev
+COPY packages/contracts packages/contracts
+COPY apps/revenue-core apps/revenue-core
+RUN npm run build -w @ake/contracts && npm run build -w @ake/revenue-core
+
+FROM node:24-bookworm-slim AS runtime
+ENV NODE_ENV=production
+WORKDIR /app
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/packages/contracts/package.json ./packages/contracts/package.json
+COPY --from=build /app/packages/contracts/dist ./packages/contracts/dist
+COPY --from=build /app/apps/revenue-core/package.json ./apps/revenue-core/package.json
+COPY --from=build /app/apps/revenue-core/dist ./apps/revenue-core/dist
+USER node
+CMD ["node", "apps/revenue-core/dist/main.js"]

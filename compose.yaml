@@ -1,0 +1,282 @@
+name: ake-revenue-crm
+
+x-core-env: &core-env
+  NODE_ENV: production
+  PORT: 4100
+  STORE_DRIVER: postgres
+  DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/revenue_crm
+  REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+  DEFAULT_WORKSPACE_ID: ake-demo
+  DEFAULT_USER_ID: ake-admin
+  API_AUTH_MODE: api-key
+  API_KEY: ${API_KEY}
+  DEMO_SEED: ${DEMO_SEED:-false}
+  ADS_MODE: ${ADS_MODE:-mock}
+  AI_AUTO_SEND: "false"
+  REQUIREMENT_ENGINE_URL: http://requirement-engine:4200
+  REQUIREMENT_ENGINE_TOKEN: ${REQUIREMENT_ENGINE_TOKEN:-${API_KEY}}
+  REQUIREMENT_ENGINE_TIMEOUT_MS: ${REQUIREMENT_ENGINE_TIMEOUT_MS:-35000}
+  FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY}
+  META_VERIFY_TOKEN: ${META_VERIFY_TOKEN:-}
+  META_APP_SECRET: ${META_APP_SECRET:-}
+  META_ACCESS_TOKEN: ${META_ACCESS_TOKEN:-}
+  META_DATASET_ID: ${META_DATASET_ID:-}
+  META_GRAPH_VERSION: ${META_GRAPH_VERSION:-v26.0}
+  META_LEAD_EVENT_SOURCE: ${META_LEAD_EVENT_SOURCE:-AKE Revenue CRM}
+  GOOGLE_LEAD_WEBHOOK_KEY: ${GOOGLE_LEAD_WEBHOOK_KEY:-}
+  GOOGLE_DATA_MANAGER_ACCESS_TOKEN: ${GOOGLE_DATA_MANAGER_ACCESS_TOKEN:-}
+  GOOGLE_ADS_ACCOUNT_ID: ${GOOGLE_ADS_ACCOUNT_ID:-}
+  GOOGLE_CONVERSION_ACTION_ID: ${GOOGLE_CONVERSION_ACTION_ID:-}
+  GOOGLE_VALIDATE_ONLY: ${GOOGLE_VALIDATE_ONLY:-true}
+  MODEL_PROVIDER: ${MODEL_PROVIDER:-mock}
+  MODEL_BASE_URL: ${MODEL_BASE_URL:-}
+  MODEL_NAME: ${MODEL_NAME:-}
+  MODEL_API_KEY: ${MODEL_API_KEY:-}
+  ERP_PROVIDER: ${ERP_PROVIDER:-mock}
+  ERP_BASE_URL: ${ERP_BASE_URL:-}
+  ERP_API_KEY: ${ERP_API_KEY:-}
+  OKKI_SYNC_ENABLED: ${OKKI_SYNC_ENABLED:-false}
+  OKKI_BASE_URL: ${OKKI_BASE_URL:-https://api-sandbox.xiaoman.cn}
+  OKKI_CLIENT_ID: ${OKKI_CLIENT_ID:-}
+  OKKI_CLIENT_SECRET: ${OKKI_CLIENT_SECRET:-}
+  OKKI_SYNC_LIMIT: ${OKKI_SYNC_LIMIT:-25}
+
+x-chatwoot-env: &chatwoot-env
+  RAILS_ENV: production
+  NODE_ENV: production
+  INSTALLATION_ENV: docker
+  FRONTEND_URL: https://${CHATWOOT_DOMAIN}
+  SECRET_KEY_BASE: ${CHATWOOT_SECRET_KEY_BASE}
+  ENABLE_ACCOUNT_SIGNUP: "false"
+  FORCE_SSL: "false"
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: 5432
+  POSTGRES_DATABASE: chatwoot
+  POSTGRES_USERNAME: ${POSTGRES_USER}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+  ACTIVE_STORAGE_SERVICE: ${CHATWOOT_STORAGE_SERVICE:-local}
+  STORAGE_BUCKET_NAME: ${S3_ATTACHMENTS_BUCKET:-}
+  STORAGE_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+  STORAGE_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+  STORAGE_REGION: ${S3_REGION:-auto}
+  STORAGE_ENDPOINT: ${S3_ENDPOINT:-}
+  STORAGE_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+  LOG_LEVEL: info
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [backend]
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [backend]
+
+  revenue-migrate:
+    image: ake-revenue-crm-revenue-core:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.core
+    environment: *core-env
+    command: ["node", "apps/revenue-core/dist/database/migrate.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks: [backend]
+
+  revenue-core:
+    image: ake-revenue-crm-revenue-core:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.core
+    restart: unless-stopped
+    environment: *core-env
+    depends_on:
+      revenue-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      requirement-engine:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4100/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [backend, egress]
+
+  revenue-worker:
+    image: ake-revenue-crm-revenue-core:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.core
+    restart: unless-stopped
+    environment:
+      <<: *core-env
+      DEMO_SEED: "false"
+    command: ["node", "apps/revenue-core/dist/worker.js"]
+    depends_on:
+      revenue-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    networks: [backend, egress]
+
+  requirement-engine:
+    image: ake-revenue-crm-requirement-engine:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.requirements
+    restart: unless-stopped
+    environment:
+      PORT: 4200
+      REQUIREMENT_ENGINE_TOKEN: ${REQUIREMENT_ENGINE_TOKEN:-${API_KEY}}
+      AKE_FOLLOWUP_SKILL_ROOT: /opt/ake-followup
+      AKE_KNOWLEDGE_ROOT: /knowledge
+      QMD_EXECUTABLE: /opt/qmd/bin/qmd
+      QMD_CONFIG_DIR: /runtime-qmd
+    volumes:
+      - ${AKE_KNOWLEDGE_ROOT:?Set AKE_KNOWLEDGE_ROOT to an approved Canonical repository}:/knowledge:ro
+      - ${AKE_FOLLOWUP_SKILL_ROOT:?Set AKE_FOLLOWUP_SKILL_ROOT to the installed follow-up Skill}:/opt/ake-followup:ro
+      - ${QMD_PACKAGE_ROOT:?Set QMD_PACKAGE_ROOT to the local QMD package}:/opt/qmd:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /runtime-qmd:size=256m,uid=1000,gid=1000,mode=0700
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4200/health').then(r=>r.json()).then(v=>{if(!v.skillReady||!v.knowledgeReady)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [backend]
+
+  workspace-web:
+    image: ake-revenue-crm-workspace-web:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+    environment:
+      SERVER_API_URL: http://revenue-core:4100
+      API_KEY: ${API_KEY}
+      DEFAULT_WORKSPACE_ID: ake-demo
+      DEFAULT_USER_ID: ake-admin
+      NEXT_PUBLIC_CHATWOOT_APP_URL: https://${CHATWOOT_DOMAIN}
+    depends_on:
+      revenue-core:
+        condition: service_healthy
+    networks: [backend, frontend]
+
+  chatwoot-migrate:
+    image: ${CHATWOOT_IMAGE:-chatwoot/chatwoot:v4.14.2}
+    environment: *chatwoot-env
+    command: ["bundle", "exec", "rails", "db:chatwoot_prepare"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: "no"
+    networks: [backend, egress]
+
+  chatwoot-web:
+    image: ${CHATWOOT_IMAGE:-chatwoot/chatwoot:v4.14.2}
+    restart: unless-stopped
+    environment: *chatwoot-env
+    command: ["bundle", "exec", "rails", "s", "-p", "3000", "-b", "0.0.0.0"]
+    depends_on:
+      chatwoot-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+    networks: [backend, egress]
+
+  chatwoot-worker:
+    image: ${CHATWOOT_IMAGE:-chatwoot/chatwoot:v4.14.2}
+    restart: unless-stopped
+    environment: *chatwoot-env
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
+    depends_on:
+      chatwoot-migrate:
+        condition: service_completed_successfully
+    networks: [backend, egress]
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      API_DOMAIN: ${API_DOMAIN}
+      CHATWOOT_DOMAIN: ${CHATWOOT_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - workspace-web
+      - chatwoot-web
+    networks: [backend, egress]
+
+  backup-agent:
+    build:
+      context: .
+      dockerfile: deploy/backup/Dockerfile
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${S3_REGION:-auto}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_BACKUP_BUCKET: ${S3_BACKUP_BUCKET:-}
+    volumes:
+      - local-backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [backend, egress]
+
+networks:
+  backend:
+    internal: true
+  frontend:
+  egress:
+
+volumes:
+  postgres-data:
+  redis-data:
+  caddy-data:
+  caddy-config:
+  local-backups:

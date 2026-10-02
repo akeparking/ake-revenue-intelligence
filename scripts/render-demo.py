@@ -5,6 +5,8 @@ from pathlib import Path
 root = Path(sys.argv[1]).resolve()
 manifest = json.loads((root / 'recording.json').read_text())
 segments = manifest['segments']
+# Preserve any offset established by reviewing the recording's real scene transitions.
+video_offset = manifest.get('video_offset_seconds', 0)
 clips = root / 'clips'
 clips.mkdir(exist_ok=True)
 offset = 0
@@ -15,7 +17,7 @@ def clock(seconds, separator='.'):
 for index, segment in enumerate(segments):
     duration = segment['end'] - segment['start']
     path = clips / f'{index:02}.mp4'
-    subprocess.run(['ffmpeg','-v','error','-y','-ss',str(segment['start']),'-i',manifest['source'],'-t',str(duration),'-an','-vf','scale=1920:1008:force_original_aspect_ratio=decrease:flags=lanczos,pad=1920:1080:(ow-iw)/2:0:color=0x0d1110,fps=30','-c:v','libx264','-preset','fast','-crf','20','-pix_fmt','yuv420p',str(path)],check=True)
+    subprocess.run(['ffmpeg','-v','error','-y','-ss',str(segment['start']+video_offset),'-i',manifest['source'],'-t',str(duration),'-an','-vf','scale=1920:1008:force_original_aspect_ratio=decrease:flags=lanczos,pad=1920:1080:(ow-iw)/2:0:color=0x0d1110,fps=30','-c:v','libx264','-preset','fast','-crf','20','-pix_fmt','yuv420p',str(path)],check=True)
     actual = float(subprocess.check_output(['ffprobe','-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',str(path)],text=True))
     # Split long captions into two readable thoughts on the same beat.
     words = segment['caption'].split()

@@ -2,7 +2,7 @@
 
 **An overseas B2B inquiry becomes a reviewed Lead, a sales opportunity, and an auditable conversion event.**
 
-[Online demo](https://demo.jayln3.my:8443/sales) · [Watch the video](https://demo.jayln3.my:8443/sales#walkthrough) · [Website inquiry](https://demo.jayln3.my:8443/) · [Operator workspace](https://demo.jayln3.my:8443/sales/workspace) · [Architecture](docs/ARCHITECTURE.md)
+[Online demo](https://demo.jayln3.my:8443/sales) · [Watch the video · 2:40](https://demo.jayln3.my:8443/sales#walkthrough) · [Website inquiry](https://demo.jayln3.my:8443/) · [Operator workspace](https://demo.jayln3.my:8443/sales/workspace) · [Architecture](docs/ARCHITECTURE.md)
 
 Export sales teams receive project requirements in conversation, then lose context while copying them into a CRM. Marketing sees the original lead but often misses the sales team's qualification decision. This project connects the message, evidence, human decision and feedback event in one traceable workflow.
 

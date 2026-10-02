@@ -24,7 +24,7 @@ The full editable graph is [architecture.mmd](architecture.mmd).
 - **Reception** authenticates webhook timestamps/signatures, checks account and inbox scope, serializes calls and caps initial replies. The model cannot write CRM or advertising state. The existing demo permits at most two initial replies and stops on human takeover.
 - **CRM outbox** retains an event until Revenue Core returns a saved inquiry and Lead ID. A CRM failure does not resend the visitor reply. Source message IDs remain stable on retry.
 - **Revenue Core** owns the Lead, inquiry projection, human review, opportunity, stage history, conversion event and delivery ledger. Imported live analyses require both the API key and a separate bridge key.
-- **PostgreSQL** persists the business workflow. Inquiry content uses AES-256-GCM when the required deployment field key is set. Operator APIs are authenticated; the public project page has no access to CRM records.
+- **PostgreSQL** persists the business workflow. Original inquiry message text uses AES-256-GCM when the required deployment field key is set. Operator APIs are authenticated; the public project page has no access to CRM records.
 - **Workspace** uses a signed, expiring HttpOnly session, origin checks and an exact backend route allowlist. It cannot proxy bridge ingestion or public webhook routes.
 - **Advertising** is Mock in this deployment. The immutable delivery mode prevents a stored Mock event from becoming live merely because environment configuration changes.
 

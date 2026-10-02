@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "page_http": 200,
+  "unauthenticated_api_http": 401,
+  "range_http": 206,
+  "range_bytes": 1024,
+  "vtt_http": 200,
+  "media": {
+    "duration": 160,
+    "currentTime": 2.976553,
+    "width": 1920,
+    "height": 1080,
+    "error": null,
+    "paused": false,
+    "tracks": 1,
+    "captionMode": "disabled"
+  },
+  "seek_passed": true,
+  "page_errors": []
+}

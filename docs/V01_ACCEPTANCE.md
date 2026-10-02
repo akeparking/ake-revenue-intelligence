@@ -14,8 +14,8 @@ Date: 2026-10-02, Asia/Shanghai. All submitted inquiries, screenshots and publis
 | Three demo datasets | Passed: GCC high intent, SEA exploratory integrator, non-target applicant |
 | README | Completed: business problem, public links, reproducible setup, scope and verification |
 | Architecture diagram | Completed: [SVG](architecture.svg), [Mermaid source](architecture.mmd), [data ownership](ARCHITECTURE.md) |
-| Demo video | Final recording and publication in progress |
-| GitHub is portfolio-ready | Source and evidence prepared; final publication in progress |
+| Demo video | Completed: [2:40 actual browser walkthrough](https://demo.jayln3.my:8443/sales#walkthrough), H.264 1920×1080 / 30 fps, English captions |
+| GitHub is portfolio-ready | Completed: public source, business README, screenshots, architecture, demo video, reproducible scripts and passing GitHub checks |
 
 ## Runtime proof
 
@@ -25,12 +25,20 @@ The [restart and replay receipt](evidence/restart-readback.json) verifies the sa
 
 The [local browser receipt](evidence/local-browser.json) records 14 checks: operator login, unauthenticated API rejection, intake, automatic analysis, reviewed Lead, opportunity, stage, human qualification, Mock receipt, replay deduplication, bridge-route isolation, origin protection, mobile overflow and no browser page errors.
 
+The [final restart receipt](evidence/restart-final.json) repeats the same checks after recording the video: 5 Leads, 2 Opportunities and 2 independent Mock deliveries survived restart without duplicates.
+
+## Video verification
+
+The [video record](evidence/demo-video.json) identifies conversation 7 / message 32, the real Codex provider, Lead and stable event used in the recording. The 160-second MP4 uses actual browser actions, with only waiting time removed. It has burned-in English captions, an optional VTT track and no audio. Source evidence, human qualification, receipt mode and the final integration states were visually checked.
+
+[Published playback checks](evidence/published-playback.json) passed: public page HTTP 200, actual 1920×1080 playback, advancing playback time, seeking to 130 seconds, MP4 byte-range HTTP 206, VTT HTTP 200, unauthenticated CRM HTTP 401 and no browser page errors.
+
 ## Code verification
 
 - 27 tests passed: 4 requirement-engine, 2 shared-contract, 19 core (including real PostgreSQL) and 2 formatting tests.
 - TypeScript checks and production builds passed.
 - Public-source scan and Git whitespace checks passed. No database dump, credential file, private knowledge file, raw customer export or machine-specific path is part of the release.
-- The [CI workflow](../.github/workflows/ci.yml) repeats dependency installation, migrations, PostgreSQL tests, type checks, build and the public-source scan.
+- [GitHub CI](https://github.com/akeparking/ake-revenue-intelligence/actions/runs/37011553617) passed for the complete application implementation. The [CI workflow](../.github/workflows/ci.yml) repeats dependency installation, migrations, PostgreSQL tests, type checks, build and the public-source scan.
 
 ## Deployment and boundaries
 

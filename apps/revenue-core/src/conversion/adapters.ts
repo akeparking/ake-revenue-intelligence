@@ -199,9 +199,9 @@ export class GoogleAdsAdapter implements AdsConversionAdapter {
   }
 }
 
-export function adapterFor(provider: string): AdsConversionAdapter {
+export function adapterFor(provider: string, mode?: "mock" | "live"): AdsConversionAdapter {
   const config = loadConfig();
-  if (config.adsMode === "mock") return new MockAdsAdapter(provider);
+  if (mode === "mock" || config.adsMode === "mock") return new MockAdsAdapter(provider);
   if (provider === "meta") return new MetaAdsAdapter(config);
   if (provider === "google") return new GoogleAdsAdapter(config);
   throw new AdapterError(`No adapter for ${provider}`, "UNSUPPORTED_PROVIDER", false);

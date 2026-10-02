@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "inquiry_replay_same_id": true,
+  "qualification_replay_same_event": true,
+  "restart_records_preserved": true,
+  "counts": {
+    "leads": 4,
+    "opportunities": 1,
+    "deliveries": 1
+  },
+  "live_inquiry_id": "inquiry_6e37bbd6-6787-4716-bef3-944e06cc9337",
+  "event_id": "qualified:ake-demo:lead_7dacab99-d854-49c0-a3d9-d46da1713cfd:v1"
+}

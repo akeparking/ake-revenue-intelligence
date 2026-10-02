@@ -1,0 +1,24 @@
+{
+  "ok": true,
+  "synthetic": true,
+  "conversation_id": 6,
+  "message_id": 28,
+  "inquiry_id": "inquiry_6e37bbd6-6787-4716-bef3-944e06cc9337",
+  "lead_id": "lead_7dacab99-d854-49c0-a3d9-d46da1713cfd",
+  "opportunity_id": "opp_ba43814b-4b7f-42df-a416-28d76038ed15",
+  "event_id": "qualified:ake-demo:lead_7dacab99-d854-49c0-a3d9-d46da1713cfd:v1",
+  "model_provider": "codex",
+  "delivery_mode": "mock",
+  "manual_api_injection": false,
+  "checks": [
+    "website_widget_submission",
+    "automatic_model_analysis",
+    "automatic_crm_import",
+    "source_message_equality",
+    "human_field_review",
+    "opportunity_creation",
+    "stage_update",
+    "human_qualification",
+    "one_mock_receipt"
+  ]
+}

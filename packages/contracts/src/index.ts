@@ -1,4 +1,7 @@
 import { z } from "zod";
+import type { QualificationAnalysis, QualificationFields } from "./workflow";
+export * from "./workflow";
+export * from "./demo-fixtures";
 
 export const providers = ["meta", "google", "organic", "manual"] as const;
 export type Provider = (typeof providers)[number];
@@ -155,6 +158,10 @@ export interface LeadRecord {
   isTest: boolean;
   createdAt: string;
   attribution: AttributionSummary;
+  aiQualification?: QualificationAnalysis;
+  confirmedQualification?: QualificationFields;
+  qualificationRevision?: number;
+  conversationId?: string;
 }
 
 export interface AttributionSummary {
@@ -182,6 +189,8 @@ export interface OpportunityRecord {
   amount?: number;
   currency: string;
   stage: OpportunityStage;
+  version: number;
+  qualifiedAt?: string;
   createdAt: string;
 }
 
@@ -342,6 +351,7 @@ export interface ConversionDeliveryRecord {
   eventId: string;
   eventType: "LeadQualified";
   provider: Provider;
+  mode: "mock" | "live";
   primarySourceLeadId: string;
   opportunityId: string;
   status: DeliveryStatus;

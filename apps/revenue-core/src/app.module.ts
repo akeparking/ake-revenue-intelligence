@@ -18,9 +18,12 @@ import { OpenApiController } from "./openapi.controller";
 import { RequirementsController } from "./requirements/requirements.controller";
 import { RequirementsService } from "./requirements/requirements.service";
 import { revenueStoreProvider } from "./store/store.provider";
+import { InboxController } from "./inbox/inbox.controller";
+import { InboxService } from "./inbox/inbox.service";
 
 @Module({
   controllers: [
+    InboxController,
     HealthController,
     LeadsController,
     WebhooksController,
@@ -32,6 +35,7 @@ import { revenueStoreProvider } from "./store/store.provider";
     RequirementsController,
   ],
   providers: [
+    InboxService,
     revenueStoreProvider,
     IngestionService,
     ConversionService,

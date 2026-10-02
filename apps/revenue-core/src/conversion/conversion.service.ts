@@ -24,9 +24,11 @@ export class ConversionService {
         results.push(await this.store.updateDelivery(delivery.id, { status: "dead_letter", providerErrorCode: "CONTEXT_MISSING", providerErrorMessage: "Qualified context is missing" }));
         continue;
       }
-      const adapter = adapterFor(delivery.provider);
-      const payload = adapter.buildQualifiedPayload(context);
+      const adapter = adapterFor(delivery.provider, delivery.mode);
+      let payload: Record<string, unknown> = {};
       try {
+        if (delivery.mode === "live" && (context.lead.isTest || context.lead.rawAttribution.consentStatus !== "granted")) throw new AdapterError("Live delivery requires a non-test lead and granted consent", "LIVE_GUARD", false);
+        payload = adapter.buildQualifiedPayload(context);
         const sent = await adapter.send(payload);
         results.push(
           await this.store.updateDelivery(delivery.id, {

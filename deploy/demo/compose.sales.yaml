@@ -1,0 +1,45 @@
+# Overlay for the existing Chatwoot demo stack. Build the bundle in WSL first.
+services:
+  sales-core:
+    image: node:24-alpine
+    restart: unless-stopped
+    user: node
+    working_dir: /app
+    command: [sh, -c, 'node apps/revenue-core/dist/database/migrate.js && exec node apps/revenue-core/dist/main.js']
+    env_file: ./private/sales-core.env
+    volumes: ['./releases/current/core:/app:ro']
+    ports: ['127.0.0.1:14100:4100']
+    networks: [backend, sales, outbound]
+    mem_limit: 192m
+    memswap_limit: 384m
+    pids_limit: 64
+    read_only: true
+    tmpfs: [/tmp:size=16m]
+    security_opt: [no-new-privileges:true]
+    logging: {driver: json-file, options: {max-size: 5m, max-file: '2'}}
+    healthcheck:
+      test: [CMD, node, -e, 'fetch("http://127.0.0.1:4100/health").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))']
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+  sales-workspace:
+    image: node:24-alpine
+    restart: unless-stopped
+    user: node
+    working_dir: /app
+    command: [node, apps/workspace-web/server.js]
+    env_file: ./private/sales-web.env
+    volumes: ['./releases/current/web:/app:ro']
+    networks: [frontend, sales]
+    mem_limit: 192m
+    memswap_limit: 384m
+    pids_limit: 64
+    read_only: true
+    tmpfs: ['/tmp:size=16m', '/app/apps/workspace-web/.next/cache:uid=1000,gid=1000,size=16m']
+    security_opt: [no-new-privileges:true]
+    logging: {driver: json-file, options: {max-size: 5m, max-file: '2'}}
+    depends_on:
+      sales-core: {condition: service_healthy}
+networks:
+  sales: {internal: true}

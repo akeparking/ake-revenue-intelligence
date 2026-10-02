@@ -1,0 +1,17 @@
+flowchart LR
+  Visitor[Website visitor] --> CW[Chatwoot Inbox]
+  CW -->|signed message event| Reception[Durable reception queue]
+  Reception -->|untrusted inquiry only| AI[Restricted Codex / model adapter]
+  AI -->|schema-validated suggestions| Bridge[Durable CRM outbox]
+  Bridge -->|API key + bridge key| Core[Revenue Core]
+  Core --> PG[(PostgreSQL)]
+  Operator[Authenticated operator] --> UI[Sales workspace]
+  UI -->|review fields| Lead[Lead]
+  UI -->|create / move stage| Opp[Opportunity + history]
+  UI -->|explicit human checks| Q[Qualified decision]
+  Lead & Opp & Q --> Core
+  Core -->|one transaction| Event[Stable conversion event + outbox]
+  Event --> Mock[Mock receipt ledger]
+  Event -. separately configured .-> Ads[Meta / Google adapters]
+  CW -. original conversation link .-> UI
+  Fixtures[3 fictional demo scenarios] --> Core

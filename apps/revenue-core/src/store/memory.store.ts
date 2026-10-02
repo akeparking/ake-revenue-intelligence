@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { ConflictException, NotFoundException, BadRequestException } from "@nestjs/common";
+import { loadConfig } from "../config";
 import {
   identifierPreview,
   maskEmail,
@@ -21,6 +23,8 @@ import {
   type CustomerProjectState,
   type RequirementCommitReceipt,
   type RequirementProfileRecord,
+  type CreateInquiryInput, type InquiryRecord, type QualificationAnalysis, type QualificationFields,
+  type QualifyOpportunityInput, type StageChangeInput,
 } from "@ake/contracts";
 import type {
   DeliveryUpdate,
@@ -34,6 +38,8 @@ import type {
 import { createInitialProjectState, hasFeedbackAttribution, isAdsProvider } from "./store.types";
 
 export class MemoryRevenueStore implements RevenueStore {
+  private readonly inquiries = new Map<string, InquiryRecord>();
+  private readonly auditEvents: Array<Record<string, unknown>> = [];
   private readonly leads = new Map<string, InternalLead>();
   private readonly opportunities = new Map<string, OpportunityRecord>();
   private readonly deliveries = new Map<string, ConversionDeliveryRecord>();
@@ -143,6 +149,8 @@ export class MemoryRevenueStore implements RevenueStore {
     if (input.personId && input.personId !== lead.personId) throw new Error("Lead does not belong to person");
     if (input.companyId && input.companyId !== lead.companyId) throw new Error("Lead does not belong to company");
 
+    const duplicate = [...this.opportunities.values()].find((item) => item.workspaceId === input.workspaceId && item.primarySourceLeadId === lead.id);
+    if (duplicate) return { opportunity: structuredClone(duplicate), deduplicated: true };
     const createdAt = new Date().toISOString();
     const opportunity: OpportunityRecord = {
       id: `opp_${randomUUID()}`,
@@ -159,11 +167,19 @@ export class MemoryRevenueStore implements RevenueStore {
       amount: input.amount,
       currency: input.currency,
       stage: "discovery",
+      version: 0,
       createdAt,
     };
     this.opportunities.set(opportunity.id, opportunity);
-    lead.status = "qualified";
+    this.auditEvents.push({ workspaceId: input.workspaceId, action: "opportunity.created", entityId: opportunity.id, actorId: input.ownerId, occurredAt: createdAt });
+    return { opportunity: structuredClone(opportunity), deduplicated: false };
+  }
 
+  async qualifyOpportunity(input: QualifyOpportunityInput): Promise<OpportunityCreationResult & { delivery: ConversionDeliveryRecord }> {
+    const opportunity = this.opportunities.get(input.opportunityId);
+    if (!opportunity || opportunity.workspaceId !== input.workspaceId) throw new NotFoundException("Opportunity not found");
+    const lead = this.leads.get(opportunity.primarySourceLeadId)!;
+    if (!input.contactReachable || !input.relevantNeed || !input.targetBuyer || !input.nextAction.trim() || !opportunity.ownerId || lead.mergeReviewRequired) throw new BadRequestException("Complete the human qualification checks first");
     const existing = [...this.deliveries.values()].find(
       (delivery) =>
         delivery.workspaceId === input.workspaceId &&
@@ -171,29 +187,99 @@ export class MemoryRevenueStore implements RevenueStore {
         delivery.primarySourceLeadId === lead.id &&
         delivery.eventType === "LeadQualified",
     );
-    if (existing) return { opportunity, delivery: structuredClone(existing), deduplicated: true };
+    if (existing) return { opportunity: structuredClone(opportunity), delivery: structuredClone(existing), deduplicated: true };
+    const createdAt = new Date().toISOString();
+    lead.status = "qualified";
+    opportunity.qualifiedAt = createdAt;
+    opportunity.nextAction = input.nextAction;
+    opportunity.version += 1;
 
     const eventId = `qualified:${input.workspaceId}:${lead.id}:v1`;
     const hasAttribution = hasFeedbackAttribution(lead);
-    const shouldSkip = !isAdsProvider(lead.provider) || !hasAttribution;
+    const mode = loadConfig().adsMode;
+    const shouldSkip = mode === "live" && (!isAdsProvider(lead.provider) || !hasAttribution || lead.isTest || lead.rawAttribution.consentStatus !== "granted");
     const delivery: ConversionDeliveryRecord = {
       id: `delivery_${randomUUID()}`,
       workspaceId: input.workspaceId,
       eventId,
       eventType: "LeadQualified",
+      mode,
       provider: lead.provider,
       primarySourceLeadId: lead.id,
       opportunityId: opportunity.id,
       status: shouldSkip ? "skipped" : "pending",
       diagnosticStatus: "unknown",
       attemptCount: 0,
-      skippedReason: shouldSkip ? "no_attribution" : undefined,
+      skippedReason: shouldSkip ? (lead.isTest ? "test_record" : !hasAttribution ? "no_attribution" : "consent_required") : undefined,
       occurredAt: createdAt,
       createdAt,
       updatedAt: createdAt,
     };
     this.deliveries.set(delivery.id, delivery);
-    return { opportunity, delivery: structuredClone(delivery), deduplicated: false };
+    this.auditEvents.push({ workspaceId: input.workspaceId, action: "lead.qualified", entityId: lead.id, opportunityId: opportunity.id, actorId: input.actorId, occurredAt: createdAt, eventId });
+    return { opportunity: structuredClone(opportunity), delivery: structuredClone(delivery), deduplicated: false };
+  }
+
+  async updateOpportunityStage(input: StageChangeInput): Promise<OpportunityRecord> {
+    const item = this.opportunities.get(input.opportunityId);
+    if (!item || item.workspaceId !== input.workspaceId) throw new NotFoundException("Opportunity not found");
+    if (item.version !== input.expectedVersion) throw new ConflictException("Stage changed elsewhere. Refresh before retrying.");
+    if (item.stage === input.stage) return structuredClone(item);
+    const fromStage = item.stage;
+    item.stage = input.stage;
+    item.version += 1;
+    this.auditEvents.push({ workspaceId: input.workspaceId, action: "opportunity.stage_changed", entityId: item.id, actorId: input.actorId, fromStage, toStage: item.stage, occurredAt: new Date().toISOString() });
+    return structuredClone(item);
+  }
+
+  async saveInquiry(input: CreateInquiryInput & { workspaceId: string; leadId: string; deferAnalysis?: boolean }): Promise<InquiryRecord> {
+    const prior = [...this.inquiries.values()].find((item) => item.workspaceId === input.workspaceId && item.eventId === input.eventId);
+    if (prior) {
+      if (prior.message !== input.message || prior.conversationId !== input.conversationId) throw new ConflictException("Event ID already belongs to different content");
+      return structuredClone(prior);
+    }
+    const lead = this.leads.get(input.leadId);
+    if (!lead || lead.workspaceId !== input.workspaceId) throw new NotFoundException("Lead not found");
+    const { email: _email, deferAnalysis, ...safe } = input;
+    const item: InquiryRecord = { ...safe, id: `inquiry_${randomUUID()}`, status: deferAnalysis ? "waiting_external" : "pending", attempts: 0, createdAt: new Date().toISOString() };
+    lead.conversationId = input.conversationId;
+    this.inquiries.set(item.id, item);
+    return structuredClone(item);
+  }
+
+  async listInquiries(workspaceId: string): Promise<InquiryRecord[]> {
+    return structuredClone([...this.inquiries.values()].filter((item) => item.workspaceId === workspaceId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+  }
+
+  async claimInquiry(): Promise<InquiryRecord | undefined> {
+    const item = [...this.inquiries.values()].find((entry) => entry.status === "pending");
+    if (!item) return;
+    item.status = "processing";
+    item.attempts += 1;
+    return structuredClone(item);
+  }
+
+  async completeInquiry(workspaceId: string, id: string, result: { analysis?: QualificationAnalysis; provider: string; error?: string }): Promise<InquiryRecord> {
+    const item = this.inquiries.get(id);
+    if (!item || item.workspaceId !== workspaceId) throw new NotFoundException("Inquiry not found");
+    if (item.status === "analyzed") return structuredClone(item);
+    item.status = result.analysis ? "analyzed" : "failed";
+    item.analysis = result.analysis;
+    item.modelProvider = result.provider;
+    item.error = result.error;
+    const lead = this.leads.get(item.leadId)!;
+    if (result.analysis) lead.aiQualification = structuredClone(result.analysis);
+    return structuredClone(item);
+  }
+
+  async applyQualification(workspaceId: string, leadId: string, actorId: string, fields: QualificationFields, expectedRevision: number): Promise<LeadRecord> {
+    const lead = this.leads.get(leadId);
+    if (!lead || lead.workspaceId !== workspaceId) throw new NotFoundException("Lead not found");
+    if ((lead.qualificationRevision || 0) !== expectedRevision) throw new ConflictException("Lead was edited elsewhere. Refresh before applying.");
+    lead.confirmedQualification = structuredClone(fields);
+    lead.qualificationRevision = expectedRevision + 1;
+    this.auditEvents.push({ workspaceId, action: "lead.analysis_reviewed", entityId: leadId, actorId, revision: lead.qualificationRevision, occurredAt: new Date().toISOString() });
+    return this.publicLead(lead);
   }
 
   async listOpportunities(workspaceId: string): Promise<OpportunityRecord[]> {
@@ -330,7 +416,7 @@ export class MemoryRevenueStore implements RevenueStore {
     return receipt;
   }
 
-  async listAudit(): Promise<Array<Record<string, unknown>>> { return []; }
+  async listAudit(workspaceId: string): Promise<Array<Record<string, unknown>>> { return structuredClone(this.auditEvents.filter((event) => event.workspaceId === workspaceId)); }
 
   async listDeliveries(workspaceId: string): Promise<ConversionDeliveryRecord[]> {
     return [...this.deliveries.values()]

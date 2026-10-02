@@ -17,6 +17,8 @@ import type {
   CustomerProjectState,
   RequirementCommitReceipt,
   RequirementProfileRecord,
+  CreateInquiryInput, InquiryRecord, QualificationAnalysis, QualificationFields,
+  QualifyOpportunityInput, StageChangeInput,
 } from "@ake/contracts";
 
 export interface RawEventInput {
@@ -45,7 +47,7 @@ export interface QualifiedContext {
 
 export interface OpportunityCreationResult {
   opportunity: OpportunityRecord;
-  delivery: ConversionDeliveryRecord;
+  delivery?: ConversionDeliveryRecord;
   deduplicated: boolean;
 }
 
@@ -83,6 +85,13 @@ export interface RevenueStore {
   listLeads(workspaceId: string): Promise<LeadRecord[]>;
   getLeadInternal(workspaceId: string, leadId: string): Promise<InternalLead | undefined>;
   createOpportunity(input: CreateOpportunityInput): Promise<OpportunityCreationResult>;
+  qualifyOpportunity(input: QualifyOpportunityInput): Promise<OpportunityCreationResult & { delivery: ConversionDeliveryRecord }>;
+  updateOpportunityStage(input: StageChangeInput): Promise<OpportunityRecord>;
+  saveInquiry(input: CreateInquiryInput & { workspaceId: string; leadId: string; deferAnalysis?: boolean }): Promise<InquiryRecord>;
+  listInquiries(workspaceId: string): Promise<InquiryRecord[]>;
+  claimInquiry(): Promise<InquiryRecord | undefined>;
+  completeInquiry(workspaceId: string, id: string, result: { analysis?: QualificationAnalysis; provider: string; error?: string }): Promise<InquiryRecord>;
+  applyQualification(workspaceId: string, leadId: string, actorId: string, fields: QualificationFields, expectedRevision: number): Promise<LeadRecord>;
   listOpportunities(workspaceId: string): Promise<OpportunityRecord[]>;
   listPersons(workspaceId: string): Promise<PersonRecord[]>;
   listCompanies(workspaceId: string): Promise<CompanyRecord[]>;

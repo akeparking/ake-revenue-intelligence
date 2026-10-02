@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { ConflictException, NotFoundException, BadRequestException } from "@nestjs/common";
+import { loadConfig } from "../config";
 import type { PoolClient, QueryResultRow } from "pg";
 import { Pool } from "pg";
 import {
@@ -23,6 +25,8 @@ import {
   type CustomerProjectState,
   type RequirementCommitReceipt,
   type RequirementProfileRecord,
+  type CreateInquiryInput, type InquiryRecord, type QualificationAnalysis, type QualificationFields,
+  type QualifyOpportunityInput, type StageChangeInput,
 } from "@ake/contracts";
 import { FieldCipher, sha256 } from "../common/crypto";
 import type {
@@ -66,6 +70,7 @@ export class PostgresRevenueStore implements RevenueStore {
     try {
       await client.query("BEGIN");
       if (input.externalLeadId) {
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [JSON.stringify([input.workspaceId, input.provider, input.externalLeadId])]);
         const duplicate = await client.query<{ id: string }>(
           `SELECT id FROM leads WHERE workspace_id=$1 AND provider=$2 AND external_lead_id=$3`,
           [input.workspaceId, input.provider, input.externalLeadId],
@@ -204,6 +209,10 @@ export class PostgresRevenueStore implements RevenueStore {
       companyName: row.company_name || undefined,
       country: row.country || undefined,
       status: row.status,
+      aiQualification: row.ai_qualification || undefined,
+      confirmedQualification: row.confirmed_qualification || undefined,
+      qualificationRevision: row.qualification_revision || 0,
+      conversationId: row.conversation_id || undefined,
       mergeReviewRequired: row.merge_review_required,
       isTest: row.is_test,
       createdAt: iso(row.created_at)!,
@@ -243,6 +252,11 @@ export class PostgresRevenueStore implements RevenueStore {
       if (input.personId && input.personId !== leadRow.person_id) throw new Error("Lead does not belong to person");
       if (input.companyId && input.companyId !== leadRow.company_id) throw new Error("Lead does not belong to company");
 
+      const duplicate = await client.query("SELECT * FROM opportunities WHERE workspace_id=$1 AND primary_source_lead_id=$2 ORDER BY created_at LIMIT 1", [input.workspaceId, input.primarySourceLeadId]);
+      if (duplicate.rowCount) {
+        await client.query("COMMIT");
+        return { opportunity: this.mapOpportunity(duplicate.rows[0]), deduplicated: true };
+      }
       const opportunityId = `opp_${randomUUID()}`;
       const createdAt = new Date().toISOString();
       await client.query(
@@ -250,60 +264,137 @@ export class PostgresRevenueStore implements RevenueStore {
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [opportunityId, input.workspaceId, input.personId || null, input.companyId || null, input.primarySourceLeadId, input.name, input.direction, input.country, input.ownerId, input.nextAction || null, input.expectedTimeline || null, input.amount ?? null, input.currency],
       );
-      await client.query(`UPDATE leads SET status='qualified' WHERE id=$1`, [input.primarySourceLeadId]);
       await client.query(
         `INSERT INTO opportunity_stage_history(id,workspace_id,opportunity_id,to_stage,actor_id,occurred_at)
          VALUES ($1,$2,$3,'discovery',$4,$5)`,
         [`history_${randomUUID()}`, input.workspaceId, opportunityId, input.ownerId, createdAt],
       );
 
-      const existing = await client.query(
-        `SELECT * FROM conversion_deliveries WHERE workspace_id=$1 AND provider=$2 AND primary_source_lead_id=$3 AND event_type='LeadQualified'`,
-        [input.workspaceId, leadRow.provider, input.primarySourceLeadId],
-      );
-      const opportunity = this.mapOpportunity({ ...input, id: opportunityId, stage: "discovery", created_at: createdAt });
-      if (existing.rowCount) {
-        await this.audit(client, input.workspaceId, input.ownerId, "opportunity.created.qualified_deduplicated", "opportunity", opportunityId, null, { sourceLeadId: input.primarySourceLeadId });
-        await client.query("COMMIT");
-        return { opportunity, delivery: this.mapDelivery(existing.rows[0]), deduplicated: true };
-      }
-
-      const touch = await client.query(`SELECT * FROM attribution_touches WHERE lead_id=$1 ORDER BY occurred_at ASC LIMIT 1`, [input.primarySourceLeadId]);
-      const ids = touch.rowCount
-        ? await client.query(`SELECT identifier_type,preview FROM ad_identifiers WHERE attribution_touch_id=$1`, [touch.rows[0].id])
-        : { rows: [] };
-      const leadContext = await this.getLeadInternal(input.workspaceId, input.primarySourceLeadId);
-      const shouldSkip = !isAdsProvider(leadRow.provider) || !leadContext || !hasFeedbackAttribution(leadContext);
-      const eventKey = `qualified:${input.workspaceId}:${input.primarySourceLeadId}:v1`;
-      const eventDbId = `event_${randomUUID()}`;
-      const snapshot = {
-        provider: leadRow.provider,
-        sourceKind: leadRow.source_kind,
-        touchId: touch.rows[0]?.id,
-        identifiers: ids.rows,
-      };
-      await client.query(
-        `INSERT INTO conversion_events(id,workspace_id,event_key,event_type,primary_source_lead_id,opportunity_id,attribution_snapshot,occurred_at)
-         VALUES ($1,$2,$3,'LeadQualified',$4,$5,$6,$7)`,
-        [eventDbId, input.workspaceId, eventKey, input.primarySourceLeadId, opportunityId, snapshot, createdAt],
-      );
-      const deliveryId = `delivery_${randomUUID()}`;
-      const status = shouldSkip ? "skipped" : "pending";
-      await client.query(
-        `INSERT INTO conversion_deliveries(id,workspace_id,conversion_event_id,event_key,event_type,provider,primary_source_lead_id,opportunity_id,status,skipped_reason,occurred_at)
-         VALUES ($1,$2,$3,$4,'LeadQualified',$5,$6,$7,$8,$9,$10)`,
-        [deliveryId, input.workspaceId, eventDbId, eventKey, leadRow.provider, input.primarySourceLeadId, opportunityId, status, shouldSkip ? "no_attribution" : null, createdAt],
-      );
-      await this.audit(client, input.workspaceId, input.ownerId, "opportunity.created.qualified", "opportunity", opportunityId, null, { sourceLeadId: input.primarySourceLeadId, deliveryId });
+      await this.audit(client, input.workspaceId, input.ownerId, "opportunity.created", "opportunity", opportunityId, null, { sourceLeadId: input.primarySourceLeadId });
       await client.query("COMMIT");
-      const deliveryResult = await this.pool.query(`SELECT * FROM conversion_deliveries WHERE id=$1`, [deliveryId]);
-      return { opportunity, delivery: this.mapDelivery(deliveryResult.rows[0]), deduplicated: false };
+      const saved = await this.pool.query("SELECT * FROM opportunities WHERE id=$1", [opportunityId]);
+      return { opportunity: this.mapOpportunity(saved.rows[0]), deduplicated: false };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
-    } finally {
-      client.release();
-    }
+    } finally { client.release(); }
+  }
+
+  async qualifyOpportunity(input: QualifyOpportunityInput): Promise<OpportunityCreationResult & { delivery: ConversionDeliveryRecord }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query("SELECT * FROM opportunities WHERE workspace_id=$1 AND id=$2 FOR UPDATE", [input.workspaceId, input.opportunityId]);
+      if (!result.rowCount) throw new NotFoundException("Opportunity not found");
+      const row = result.rows[0];
+      const source = await client.query("SELECT * FROM leads WHERE workspace_id=$1 AND id=$2 FOR UPDATE", [input.workspaceId, row.primary_source_lead_id]);
+      const lead = source.rows[0];
+      if (!input.contactReachable || !input.relevantNeed || !input.targetBuyer || !input.nextAction.trim() || !row.owner_id || lead.merge_review_required) throw new BadRequestException("Complete the human qualification checks first");
+      const existing = await client.query("SELECT * FROM conversion_deliveries WHERE workspace_id=$1 AND primary_source_lead_id=$2 AND event_type='LeadQualified'", [input.workspaceId, lead.id]);
+      if (existing.rowCount) {
+        await client.query("COMMIT");
+        return { opportunity: this.mapOpportunity(row), delivery: this.mapDelivery(existing.rows[0]), deduplicated: true };
+      }
+      const now = new Date().toISOString();
+      const touch = await client.query("SELECT * FROM attribution_touches WHERE lead_id=$1 ORDER BY occurred_at LIMIT 1", [lead.id]);
+      const ids = await client.query("SELECT identifier_type,preview FROM ad_identifiers WHERE attribution_touch_id=$1", [touch.rows[0]?.id]);
+      const context = await this.getLeadInternal(input.workspaceId, lead.id);
+      const mode = loadConfig().adsMode;
+      const hasAttribution = !!context && hasFeedbackAttribution(context);
+      const reason = mode !== "live" ? null : lead.is_test ? "test_record" : !isAdsProvider(lead.provider) || !hasAttribution ? "no_attribution" : touch.rows[0]?.consent_status !== "granted" ? "consent_required" : null;
+      const eventKey = `qualified:${input.workspaceId}:${lead.id}:v1`;
+      const eventId = `event_${randomUUID()}`;
+      const deliveryId = `delivery_${randomUUID()}`;
+      const updated = await client.query("UPDATE opportunities SET qualified_at=$1,next_action=$2,version=version+1 WHERE id=$3 RETURNING *", [now, input.nextAction, row.id]);
+      await client.query("UPDATE leads SET status='qualified' WHERE id=$1", [lead.id]);
+      await client.query(`INSERT INTO conversion_events(id,workspace_id,event_key,event_type,primary_source_lead_id,opportunity_id,attribution_snapshot,occurred_at)
+        VALUES($1,$2,$3,'LeadQualified',$4,$5,$6,$7)`, [eventId, input.workspaceId, eventKey, lead.id, row.id, { provider: lead.provider, sourceKind: lead.source_kind, identifiers: ids.rows, mode, actorId: input.actorId, isTest: lead.is_test }, now]);
+      const delivery = await client.query(`INSERT INTO conversion_deliveries(id,workspace_id,conversion_event_id,event_key,event_type,provider,primary_source_lead_id,opportunity_id,status,skipped_reason,occurred_at,mode)
+        VALUES($1,$2,$3,$4,'LeadQualified',$5,$6,$7,$8,$9,$10,$11) RETURNING *`, [deliveryId, input.workspaceId, eventId, eventKey, lead.provider, lead.id, row.id, reason ? "skipped" : "pending", reason, now, mode]);
+      await this.audit(client, input.workspaceId, input.actorId, "lead.qualified", "lead", lead.id, null, { opportunityId: row.id, eventId: eventKey, mode });
+      await client.query("COMMIT");
+      return { opportunity: this.mapOpportunity(updated.rows[0]), delivery: this.mapDelivery(delivery.rows[0]), deduplicated: false };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally { client.release(); }
+  }
+
+  async updateOpportunityStage(input: StageChangeInput): Promise<OpportunityRecord> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const found = await client.query("SELECT * FROM opportunities WHERE workspace_id=$1 AND id=$2 FOR UPDATE", [input.workspaceId, input.opportunityId]);
+      if (!found.rowCount) throw new NotFoundException("Opportunity not found");
+      const before = found.rows[0];
+      if (before.version !== input.expectedVersion) throw new ConflictException("Stage changed elsewhere. Refresh before retrying.");
+      if (before.stage === input.stage) { await client.query("COMMIT"); return this.mapOpportunity(before); }
+      const result = await client.query("UPDATE opportunities SET stage=$1,version=version+1 WHERE id=$2 RETURNING *", [input.stage, input.opportunityId]);
+      await client.query("INSERT INTO opportunity_stage_history(id,workspace_id,opportunity_id,from_stage,to_stage,actor_id) VALUES($1,$2,$3,$4,$5,$6)", [`history_${randomUUID()}`, input.workspaceId, input.opportunityId, before.stage, input.stage, input.actorId]);
+      await this.audit(client, input.workspaceId, input.actorId, "opportunity.stage_changed", "opportunity", input.opportunityId, { stage: before.stage }, { stage: input.stage });
+      await client.query("COMMIT");
+      return this.mapOpportunity(result.rows[0]);
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
+  }
+
+  async saveInquiry(input: CreateInquiryInput & { workspaceId: string; leadId: string; deferAnalysis?: boolean }): Promise<InquiryRecord> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(`INSERT INTO inbox_messages(id,workspace_id,lead_id,event_id,conversation_id,channel,display_name,message_ciphertext,message_hash,is_test,occurred_at,status)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT(workspace_id,event_id) DO NOTHING`, [`inquiry_${randomUUID()}`, input.workspaceId, input.leadId, input.eventId, input.conversationId, input.channel, input.displayName, this.cipher.encrypt(input.message), sha256(input.message), input.isTest, input.occurredAt, input.deferAnalysis ? "waiting_external" : "pending"]);
+      const found = await client.query("SELECT * FROM inbox_messages WHERE workspace_id=$1 AND event_id=$2", [input.workspaceId, input.eventId]);
+      if (found.rows[0].message_hash !== sha256(input.message) || found.rows[0].conversation_id !== input.conversationId) throw new ConflictException("Event ID already belongs to different content");
+      await client.query("UPDATE leads SET conversation_id=$1 WHERE workspace_id=$2 AND id=$3", [input.conversationId, input.workspaceId, input.leadId]);
+      await client.query("COMMIT");
+      return this.mapInquiry(found.rows[0]);
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
+  }
+
+  async listInquiries(workspaceId: string): Promise<InquiryRecord[]> {
+    const result = await this.pool.query("SELECT * FROM inbox_messages WHERE workspace_id=$1 ORDER BY created_at DESC LIMIT 200", [workspaceId]);
+    return result.rows.map((row) => this.mapInquiry(row));
+  }
+
+  async claimInquiry(): Promise<InquiryRecord | undefined> {
+    const result = await this.pool.query(`UPDATE inbox_messages SET status='processing',attempts=attempts+1,updated_at=now()
+      WHERE id=(SELECT id FROM inbox_messages WHERE status='pending' OR (status='processing' AND updated_at<now()-interval '3 minutes')
+      ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING *`);
+    return result.rowCount ? this.mapInquiry(result.rows[0]) : undefined;
+  }
+
+  async completeInquiry(workspaceId: string, id: string, result: { analysis?: QualificationAnalysis; provider: string; error?: string }): Promise<InquiryRecord> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const found = await client.query("SELECT * FROM inbox_messages WHERE workspace_id=$1 AND id=$2 FOR UPDATE", [workspaceId, id]);
+      if (!found.rowCount) throw new NotFoundException("Inquiry not found");
+      if (found.rows[0].status === "analyzed") { await client.query("COMMIT"); return this.mapInquiry(found.rows[0]); }
+      const saved = await client.query("UPDATE inbox_messages SET status=$1,analysis=$2,model_provider=$3,error=$4,updated_at=now() WHERE id=$5 RETURNING *", [result.analysis ? "analyzed" : "failed", result.analysis || null, result.provider, result.error || null, id]);
+      if (result.analysis) await client.query("UPDATE leads SET ai_qualification=$1 WHERE workspace_id=$2 AND id=$3", [result.analysis, workspaceId, found.rows[0].lead_id]);
+      await client.query("COMMIT");
+      return this.mapInquiry(saved.rows[0]);
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
+  }
+
+  async applyQualification(workspaceId: string, leadId: string, actorId: string, fields: QualificationFields, expectedRevision: number): Promise<LeadRecord> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const updated = await client.query("UPDATE leads SET confirmed_qualification=$1,qualification_revision=qualification_revision+1 WHERE workspace_id=$2 AND id=$3 AND qualification_revision=$4 RETURNING id", [fields, workspaceId, leadId, expectedRevision]);
+      if (!updated.rowCount) throw new ConflictException("Lead was edited elsewhere or is unavailable. Refresh before applying.");
+      await this.audit(client, workspaceId, actorId, "lead.analysis_reviewed", "lead", leadId, { revision: expectedRevision }, { revision: expectedRevision + 1 });
+      await client.query("COMMIT");
+      return this.publicLead((await this.getLeadInternal(workspaceId, leadId))!);
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
+  }
+
+  private mapInquiry(row: QueryResultRow): InquiryRecord {
+    return { id: row.id, workspaceId: row.workspace_id, leadId: row.lead_id, eventId: row.event_id, conversationId: row.conversation_id, channel: row.channel, displayName: row.display_name, message: this.cipher.decrypt(row.message_ciphertext), isTest: row.is_test, occurredAt: iso(row.occurred_at)!, status: row.status, analysis: row.analysis || undefined, modelProvider: row.model_provider || undefined, error: row.error || undefined, attempts: row.attempts, createdAt: iso(row.created_at)! };
   }
 
   async listOpportunities(workspaceId: string): Promise<OpportunityRecord[]> {
@@ -611,6 +702,8 @@ export class PostgresRevenueStore implements RevenueStore {
       amount: row.amount === null || row.amount === undefined ? undefined : Number(row.amount),
       currency: row.currency,
       stage: row.stage,
+      version: row.version || 0,
+      qualifiedAt: iso(row.qualified_at),
       createdAt: iso(row.created_at || row.createdAt)!,
     };
   }
@@ -621,6 +714,7 @@ export class PostgresRevenueStore implements RevenueStore {
       workspaceId: row.workspace_id,
       eventId: row.event_key,
       eventType: row.event_type,
+      mode: row.mode || "mock",
       provider: row.provider,
       primarySourceLeadId: row.primary_source_lead_id,
       opportunityId: row.opportunity_id,

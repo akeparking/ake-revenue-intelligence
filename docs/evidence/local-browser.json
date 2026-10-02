@@ -1,0 +1,22 @@
+{
+  "ok": true,
+  "checks": [
+    "login",
+    "unauthenticated_api_rejected",
+    "inquiry_received",
+    "automatic_analysis",
+    "fields_reviewed",
+    "opportunity_created",
+    "stage_updated",
+    "human_qualified",
+    "mock_receipt",
+    "qualification_replay_deduplicated",
+    "bridge_proxy_rejected",
+    "csrf_rejected",
+    "mobile_no_overflow",
+    "no_page_errors"
+  ],
+  "lead_id": "lead_5da2b088-51de-4e46-8d2c-5416ac0af39a",
+  "opportunity_id": "opp_f8d5504d-6042-4ee2-91fa-1329df922330",
+  "event_id": "qualified:ake-demo:lead_5da2b088-51de-4e46-8d2c-5416ac0af39a:v1"
+}

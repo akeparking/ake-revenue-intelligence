@@ -1,0 +1,23 @@
+import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { resolve, join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+const destination = process.argv[2];
+if (!destination) throw new Error('Usage: node scripts/build-demo-bundle.mjs /absolute/output-directory');
+const root = process.cwd();
+const target = resolve(destination);
+if (target === root || target.startsWith(root + '/')) throw new Error('Keep runtime bundles outside the source repository');
+await mkdir(target, { recursive: true });
+const core = join(target, 'core');
+for (const dir of ['apps/revenue-core', 'packages/contracts', 'apps/workspace-web']) await mkdir(join(core, dir), { recursive: true });
+for (const file of ['package.json', 'package-lock.json', 'apps/revenue-core/package.json', 'packages/contracts/package.json', 'apps/workspace-web/package.json']) await cp(join(root, file), join(core, file));
+execFileSync('npm', ['ci', '--omit=dev', '--ignore-scripts', '--workspace=@ake/revenue-core', '--workspace=@ake/contracts', '--no-audit', '--no-fund'], { cwd: core, stdio: 'inherit' });
+await cp(join(root, 'apps/revenue-core/dist'), join(core, 'apps/revenue-core/dist'), { recursive: true });
+await cp(join(root, 'packages/contracts/dist'), join(core, 'packages/contracts/dist'), { recursive: true });
+await cp(join(root, 'apps/workspace-web/.next/standalone'), join(target, 'web'), { recursive: true });
+await cp(join(root, 'apps/workspace-web/.next/static'), join(target, 'web/apps/workspace-web/.next/static'), { recursive: true });
+await mkdir(join(target, 'web/apps/workspace-web/.next/cache'), { recursive: true });
+await mkdir(join(target, 'web/apps/workspace-web/public'), { recursive: true });
+try { await cp(join(root, 'apps/workspace-web/public'), join(target, 'web/apps/workspace-web/public'), { recursive: true }); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+await cp(join(root, 'deploy/demo'), join(target, 'deploy'), { recursive: true, filter: (path) => !path.includes('__pycache__') });
+await writeFile(join(target, 'manifest.json'), JSON.stringify({ version: '0.1.0', createdAt: new Date().toISOString(), node: process.version, adsMode: 'mock', modelAutoSend: false }, null, 2) + '\n');
+console.log('Runtime bundle prepared');

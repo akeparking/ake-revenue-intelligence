@@ -31,6 +31,7 @@ import {
 } from "@phosphor-icons/react";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { SalesInbox, Pipeline, appPath, workflowApi } from "./sales-workflow";
 import { conversionRate, countryName, formatRelative } from "../lib/format";
 
 type View = "command" | "inbox" | "leads" | "opportunities" | "deliveries" | "orders" | "integrations";
@@ -38,7 +39,7 @@ type ProviderFilter = "all" | "meta" | "google" | "organic";
 
 const nav = [
   { id: "command", label: "Command center", icon: SquaresFour },
-  { id: "inbox", label: "Unified inbox", icon: ChatCircleDots, badge: "3" },
+  { id: "inbox", label: "Unified inbox", icon: ChatCircleDots },
   { id: "leads", label: "Leads", icon: UsersThree },
   { id: "opportunities", label: "Opportunities", icon: Funnel },
   { id: "deliveries", label: "Feedback delivery", icon: Broadcast },
@@ -111,15 +112,16 @@ export function WorkspaceClient({ initialData, connected }: { initialData: Dashb
     if (!selectedLeadId) return;
     const controller = new AbortController();
     setRequirementLoading(true);
-    fetch(`/api/backend/api/v1/requirements/${selectedLeadId}?conversationId=${encodeURIComponent(`crm:${selectedLeadId}`)}`, { signal: controller.signal })
+    fetch(appPath(`/api/backend/api/v1/requirements/${selectedLeadId}?conversationId=${encodeURIComponent(`crm:${selectedLeadId}`)}`), { signal: controller.signal })
       .then(async (response) => response.ok ? response.json().catch(() => null) : null)
       .then((profile) => { if (!controller.signal.aborted) setRequirementProfile(profile); })
+      .catch(() => { if (!controller.signal.aborted) setRequirementProfile(null); })
       .finally(() => { if (!controller.signal.aborted) setRequirementLoading(false); });
     return () => controller.abort();
   }, [selectedLeadId]);
 
   async function post(path: string, body?: object) {
-    const response = await fetch(`/api/backend/${path}`, {
+    const response = await fetch(appPath(`/api/backend/${path}`), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body || {}),
@@ -200,7 +202,7 @@ export function WorkspaceClient({ initialData, connected }: { initialData: Dashb
   const panelText = view === "deliveries"
     ? ["Conversion delivery ledger", "Immutable events with retry and diagnostic state."]
     : view === "opportunities"
-      ? ["Opportunity pipeline", "Creating an opportunity is the hard Qualified trigger."]
+      ? ["Opportunity pipeline", "Move opportunities through the pipeline and confirm qualification separately."]
       : view === "integrations"
         ? ["Connector control", "Production paths stay official; imports and feedback remain auditable."]
         : view === "orders"
@@ -215,8 +217,8 @@ export function WorkspaceClient({ initialData, connected }: { initialData: Dashb
         <div className="brand-row">
           <div className="brand-mark">AKE</div>
           <div>
-            <strong>Revenue OS</strong>
-            <span>Shadow Pilot</span>
+            <strong>AI Sales</strong>
+            <span>Workspace v0.1</span>
           </div>
           <button className="icon-button mobile-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X /></button>
         </div>
@@ -231,7 +233,7 @@ export function WorkspaceClient({ initialData, connected }: { initialData: Dashb
             <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => { setView(item.id); setMobileNav(false); }}>
               <item.icon size={18} weight={view === item.id ? "fill" : "regular"} />
               <span>{item.label}</span>
-              {"badge" in item && item.badge && <em>{item.badge}</em>}
+              {"badge" in item && <em>{initialData.leads.length}</em>}
             </button>
           ))}
           <span className="nav-section secondary">Operations</span>
@@ -245,7 +247,7 @@ export function WorkspaceClient({ initialData, connected }: { initialData: Dashb
         <div className="sidebar-foot">
           <div className="pilot-guardrail">
             <span className="guard-icon"><CheckCircle size={17} weight="fill" /></span>
-            <div><strong>Shadow mode active</strong><small>OKKI + Feishu are read-only</small></div>
+            <div><strong>Demo workspace</strong><small>Ads feedback stays Mock</small></div>
           </div>
           <div className="user-row">
             <span className="user-avatar">DA</span>
@@ -279,7 +281,7 @@ export function WorkspaceClient({ initialData, connected }: { initialData: Dashb
         )}
         {notice && <div className="toast" role="status"><CheckCircle size={17} />{notice}<button onClick={() => setNotice(null)}><X size={15} /></button></div>}
 
-        <main className="content-grid">
+        <main className={`content-grid ${["inbox", "opportunities", "integrations", "deliveries"].includes(view) ? "wide-content" : ""} ${view === "inbox" ? "workflow-inbox" : ""}`}>
           <section className="main-column">
             <div className="page-heading">
               <div>
@@ -287,7 +289,7 @@ export function WorkspaceClient({ initialData, connected }: { initialData: Dashb
                 <h1>{view === "command" ? "Revenue command center" : activeTitle}</h1>
                 <p>One operational view from inbound identity to qualified feedback.</p>
               </div>
-              <div className="date-control"><Gauge size={17} /><span>Live pilot view</span><CaretDown size={14} /></div>
+              <div className="date-control"><Gauge size={17} /><span>Demo workspace</span><CaretDown size={14} /></div>
             </div>
 
             <div className="metric-strip">
@@ -301,7 +303,7 @@ export function WorkspaceClient({ initialData, connected }: { initialData: Dashb
                 <span>Opportunities</span><strong>{initialData.metrics.opportunities}</strong><small>Sales-owned stage</small>
               </div>
               <div className="metric-item health">
-                <span>Feedback accepted</span><strong>{accepted}<small> / {initialData.deliveries.length}</small></strong><small>{matched} platform matched</small>
+                <span>Feedback receipts</span><strong>{accepted}<small> / {initialData.deliveries.length}</small></strong><small>{matched} platform matched</small>
               </div>
             </div>
 
@@ -314,8 +316,8 @@ export function WorkspaceClient({ initialData, connected }: { initialData: Dashb
               </div>
               <div className="flow-track">
                 <FlowStep label="Inbound" value={initialData.metrics.totalLeads} detail="All sources" state="done" />
-                <FlowStep label="Qualified" value={initialData.metrics.qualifiedLeads} detail="Opportunity created" state={initialData.metrics.qualifiedLeads ? "done" : "idle"} />
-                <FlowStep label="API accepted" value={accepted} detail="Provider 2xx" state={accepted ? "done" : "idle"} />
+                <FlowStep label="Qualified" value={initialData.metrics.qualifiedLeads} detail="Human reviewed" state={initialData.metrics.qualifiedLeads ? "done" : "idle"} />
+                <FlowStep label="Feedback receipt" value={accepted} detail="Mock or provider receipt" state={accepted ? "done" : "idle"} />
                 <FlowStep label="Platform matched" value={matched} detail="Offline diagnostics" state={matched ? "done" : "waiting"} last />
               </div>
             </section>
@@ -331,9 +333,9 @@ export function WorkspaceClient({ initialData, connected }: { initialData: Dashb
               {view === "integrations" ? (
                 <IntegrationPanel busy={busy} onSyncOkki={syncOkki} />
               ) : view === "opportunities" ? (
-                <OpportunityTable opportunities={initialData.opportunities} leads={initialData.leads} />
+                <Pipeline opportunities={initialData.opportunities} />
               ) : view === "inbox" ? (
-                <InboxPanel />
+                <SalesInbox leads={initialData.leads} onCreate={setModalLead} />
               ) : view === "orders" ? (
                 <EmptyState title="No mirrored orders yet" detail="ERPNext sandbox references will appear here after an opportunity is handed to the ERP adapter." />
               ) : view === "deliveries" ? (
@@ -360,7 +362,7 @@ export function WorkspaceClient({ initialData, connected }: { initialData: Dashb
             </section>
           </section>
 
-          <aside className="context-rail">
+          {!["inbox", "opportunities", "integrations", "deliveries"].includes(view) && <aside className="context-rail">
             {selectedLead ? (
               <>
                 <div className="context-head"><span>Lead context</span><button className="icon-button"><DotsThreeVertical /></button></div>
@@ -386,29 +388,25 @@ export function WorkspaceClient({ initialData, connected }: { initialData: Dashb
                   busy={busy === "requirement"}
                   onAnalyze={analyzeRequirement}
                 />
-                <button className="primary-button full" onClick={() => setModalLead(selectedLead)} disabled={selectedLead.status === "qualified"}><Funnel size={17} />{selectedLead.status === "qualified" ? "Opportunity already created" : "Qualify and create opportunity"}</button>
+                <button className="primary-button full" onClick={() => setModalLead(selectedLead)} disabled={selectedLead.status === "qualified"}><Funnel size={17} />{selectedLead.status === "qualified" ? "Opportunity already created" : "Create opportunity"}</button>
                 <a className="chatwoot-link" href={process.env.NEXT_PUBLIC_CHATWOOT_APP_URL || "#"}><WhatsappLogo size={17} weight="fill" />Open conversation in Chatwoot<ArrowUpRight size={15} /></a>
               </>
             ) : <EmptyState title="Select a lead" detail="The identity, attribution and next action will appear here." />}
-          </aside>
+          </aside>}
         </main>
       </div>
-      {modalLead && <OpportunityModal lead={modalLead} onClose={() => setModalLead(null)} onSubmit={async (body) => { setBusy("opportunity"); try { const result = await post("api/v1/opportunities", body); setNotice(result.deduplicated ? "Opportunity created; Qualified feedback was already recorded for this source." : "Opportunity created and Qualified feedback queued."); setModalLead(null); router.refresh(); } finally { setBusy(null); } }} busy={busy === "opportunity"} />}
+      {modalLead && <OpportunityModal lead={modalLead} onClose={() => setModalLead(null)} onSubmit={async (body) => { setBusy("opportunity"); try { const result = await post("api/v1/opportunities", body); setNotice(result.deduplicated ? "This lead already has an opportunity." : "Opportunity created. Review Qualified in the pipeline when ready."); setModalLead(null); router.refresh(); } finally { setBusy(null); } }} busy={busy === "opportunity"} />}
     </div>
   );
 }
 
 function IntegrationPanel({ busy, onSyncOkki }: { busy: string | null; onSyncOkki: () => void }) {
-  const connectors = [
-    { name: "Chatwoot", detail: "Website widget + WhatsApp Cloud API", state: "Channel owner", icon: ChatCircleDots },
-    { name: "Requirement engine", detail: "AKE Canonical knowledge + progressive project discovery", state: "Local · draft only", icon: Sparkle },
-    { name: "Meta", detail: "Lead Ads, CTWA and QualifiedLead feedback", state: "Mock-safe", icon: MetaLogo },
-    { name: "Google", detail: "Lead Form, click IDs and Data Manager API", state: "Validate only", icon: GoogleLogo },
-  ];
-  return <div className="connector-list">
-    {connectors.map((connector) => <div className="connector-row" key={connector.name}><span className="connector-icon"><connector.icon size={20} weight="bold" /></span><div><strong>{connector.name}</strong><small>{connector.detail}</small></div><em><i />{connector.state}</em><button className="secondary-button" disabled>Configure on VPS</button></div>)}
-    <div className="connector-row okki"><span className="connector-icon"><ArrowClockwise size={20} /></span><div><strong>OKKI read-only import</strong><small>Current and converted inquiries; zero writes back</small></div><em><i />External source</em><button className="secondary-button" onClick={onSyncOkki} disabled={busy === "okki"}>{busy === "okki" ? <CircleNotch className="spin" /> : <ArrowClockwise />}Pull 10 + 10</button></div>
-    <div className="connector-guard"><CheckCircle size={17} weight="fill" /><span>OKKI Lead ID is an external CRM identifier. Meta/Google Lead IDs and Click IDs remain separate fields.</span></div>
+  const [connectors, setConnectors] = useState<Array<{ name: string; state: string; detail: string }>>([]);
+  const [error, setError] = useState("");
+  useEffect(() => { workflowApi("integrations/status").then(setConnectors).catch(() => setError("Unable to read connector status.")); }, []);
+  return <div className="connector-list">{error && <p role="alert">{error}</p>}{!connectors.length && !error && <p>Loading connector status…</p>}
+    {connectors.map((connector) => <div className="connector-row" key={connector.name}><span className="connector-icon"><Broadcast size={20} /></span><div><strong>{connector.name}</strong><small>{connector.detail}</small></div><em>{connector.state}</em></div>)}
+    <div className="connector-guard"><CheckCircle size={17} /><span>Mock receipts demonstrate the workflow. They do not claim advertising attribution or optimization.</span></div>
   </div>;
 }
 
@@ -465,9 +463,9 @@ function DeliveryTable({ deliveries, busy, onReplay }: { deliveries: ConversionD
       <table>
         <thead><tr><th>Event</th><th>Provider</th><th>Delivery</th><th>Diagnostics</th><th>Attempts</th><th>Action</th></tr></thead>
         <tbody>{deliveries.map((item) => <tr key={item.id}>
-          <td><span className="mono-cell">{item.eventId.replace("qualified:ake-demo:", "…")}</span><small className="table-sub">{formatRelative(item.createdAt)}</small></td>
+          <td><span className="mono-cell">{item.eventId.replace("qualified:ake-demo:", "…")}</span><small className="table-sub">{formatRelative(item.createdAt)}</small>{item.payloadPreview && <details className="payload-preview"><summary>Payload and receipt</summary><pre>{JSON.stringify({ payload: item.payloadPreview, receipt: item.providerResponseId, mode: item.mode }, null, 2)}</pre></details>}</td>
           <td><div className={`provider-cell ${item.provider}`}><ProviderIcon provider={item.provider} />{item.provider}</div></td>
-          <td><span className={`status-pill ${item.status}`}>{statusLabel[item.status]}</span></td>
+          <td><span className={`status-pill ${item.status}`}>{item.mode === "mock" && item.status === "accepted" ? "Mock receipt" : statusLabel[item.status]}</span><small className="table-sub">{item.mode} {item.skippedReason || item.providerErrorMessage || ""}</small></td>
           <td><span className={`diagnostic ${item.diagnosticStatus}`}><i />{statusLabel[item.diagnosticStatus]}</span></td>
           <td>{item.attemptCount}</td>
           <td><button className="row-text-action" disabled={["skipped", "dispatching"].includes(item.status) || busy === item.id} onClick={() => onReplay(item)}>{busy === item.id ? <CircleNotch className="spin" /> : <ArrowClockwise />}Replay</button></td>
@@ -493,7 +491,7 @@ function OpportunityModal({ lead, onClose, onSubmit, busy }: { lead: LeadRecord;
         country: data.get("country"),
         ownerId: data.get("ownerId"),
         nextAction: data.get("nextAction"),
-        expectedTimeline: data.get("expectedTimeline"),
+        expectedTimeline: data.get("expectedTimeline") || undefined,
         currency: "USD",
       });
     } catch (cause) {
@@ -503,17 +501,17 @@ function OpportunityModal({ lead, onClose, onSubmit, busy }: { lead: LeadRecord;
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="modal" role="dialog" aria-modal="true" aria-labelledby="opportunity-title">
-        <div className="modal-head"><div><span className="eyebrow">Hard qualification trigger</span><h2 id="opportunity-title">Create opportunity</h2><p>This transaction marks the lead qualified and writes one immutable feedback event.</p></div><button className="icon-button" onClick={onClose}><X /></button></div>
+        <div className="modal-head"><div><span className="eyebrow">Discovery opportunity</span><h2 id="opportunity-title">Create opportunity</h2><p>Create the opportunity, then review qualification in the pipeline.</p></div><button className="icon-button" onClick={onClose}><X /></button></div>
         <div className="source-lock"><ProviderIcon provider={lead.provider} /><div><span>Primary source locked</span><strong>{lead.displayName} · {lead.provider} {lead.sourceKind.replace("_", " ")}</strong></div><CheckCircle size={20} weight="fill" /></div>
         <form onSubmit={submit}>
           <label className="field wide"><span>Opportunity name</span><input name="name" defaultValue={`${lead.companyName || lead.displayName} parking project`} required minLength={3} /></label>
-          <label className="field"><span>Project direction</span><input name="direction" defaultValue="Automated parking solution" required minLength={2} /></label>
-          <label className="field"><span>Country / market</span><input name="country" defaultValue={lead.country || ""} required minLength={2} /></label>
+          <label className="field"><span>Project direction</span><input name="direction" defaultValue={lead.confirmedQualification?.products.join(", ") || lead.aiQualification?.products.join(", ") || ""} required minLength={2} /></label>
+          <label className="field"><span>Country / market</span><input name="country" defaultValue={lead.confirmedQualification?.country || lead.aiQualification?.country || lead.country || ""} required minLength={2} /></label>
           <label className="field"><span>Owner</span><select name="ownerId" defaultValue="ake-admin"><option value="ake-admin">Demo Admin</option><option value="sales-01">Overseas Sales 01</option></select></label>
-          <label className="field"><span>Expected timeline</span><select name="expectedTimeline" defaultValue="Within 30 days"><option>Within 30 days</option><option>1–3 months</option><option>3–6 months</option><option>More than 6 months</option></select></label>
-          <label className="field wide"><span>Next action</span><textarea name="nextAction" defaultValue="Confirm site drawings, parking capacity and decision timeline" required minLength={2} /></label>
+          <label className="field"><span>Expected timeline</span><select name="expectedTimeline" defaultValue=""><option value="">Not confirmed</option><option>Within 30 days</option><option>1–3 months</option><option>3–6 months</option><option>More than 6 months</option></select></label>
+          <label className="field wide"><span>Next action</span><textarea name="nextAction" defaultValue={lead.confirmedQualification?.nextAction || lead.aiQualification?.nextAction || ""} required minLength={2} /></label>
           {error && <div className="form-error"><WarningCircle />{error}</div>}
-          <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button" disabled={busy}>{busy ? <CircleNotch className="spin" /> : <Funnel />}Create and queue Qualified</button></div>
+          <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button" disabled={busy}>{busy ? <CircleNotch className="spin" /> : <Funnel />}Create opportunity</button></div>
         </form>
       </section>
     </div>

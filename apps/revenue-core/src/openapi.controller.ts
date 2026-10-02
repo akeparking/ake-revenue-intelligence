@@ -1,6 +1,8 @@
 import { Controller, Get } from "@nestjs/common";
 
 const json = { "application/json": { schema: { type: "object" } } };
+const idParameters = [{ name: "id", in: "path", required: true, schema: { type: "string" } }];
+const created = { "201": { description: "Command accepted", content: json } };
 const ok = { "200": { description: "Successful response", content: json } };
 
 @Controller()
@@ -36,8 +38,13 @@ export class OpenApiController {
         },
         "/api/v1/opportunities": {
           get: { summary: "List opportunities", responses: ok },
-          post: { summary: "Create an opportunity and atomically queue Qualified feedback", requestBody: { required: true, content: json }, responses: { "201": { description: "Opportunity and delivery ledger entry created", content: json }, "400": { description: "Qualification fields are incomplete" } } },
+          post: { summary: "Create an idempotent discovery opportunity; qualification is separate", requestBody: { required: true, content: json }, responses: { "201": { description: "Opportunity created or existing opportunity returned", content: json }, "400": { description: "Invalid opportunity input" } } },
         },
+        "/api/v1/inbox": { get: { summary: "List authenticated inquiry projections", responses: ok }, post: { summary: "Receive and queue a fictional inquiry for analysis", requestBody: { content: json }, responses: created } },
+        "/api/v1/leads/{id}/review": { parameters: idParameters, post: { summary: "Save human-reviewed fields with an expected revision", requestBody: { content: json }, responses: created } },
+        "/api/v1/opportunities/{id}/stage": { parameters: idParameters, post: { summary: "Change stage with an expected version and audit entry", requestBody: { content: json }, responses: created } },
+        "/api/v1/opportunities/{id}/qualify": { parameters: idParameters, post: { summary: "Explicit human qualification and transactional event creation", requestBody: { content: json }, responses: created } },
+        "/api/v1/integrations/status": { get: { summary: "Read configured and receipt-verified integration states", responses: ok } },
         "/api/v1/dashboard": { get: { summary: "Get command-center snapshot", responses: ok } },
         "/api/v1/conversion-deliveries": { get: { summary: "List conversion deliveries", responses: ok } },
         "/api/v1/conversion-deliveries/process": { post: { summary: "Process pending outbox events", responses: ok } },

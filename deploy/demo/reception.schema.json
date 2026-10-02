@@ -1,0 +1,169 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reply",
+    "summary",
+    "intent",
+    "parking_spaces",
+    "products",
+    "next_action",
+    "needs_human",
+    "qualification"
+  ],
+  "properties": {
+    "reply": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "intent": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low",
+        "unknown"
+      ]
+    },
+    "parking_spaces": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "products": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "next_action": {
+      "type": "string"
+    },
+    "needs_human": {
+      "type": "boolean"
+    },
+    "qualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "company",
+        "country",
+        "city",
+        "projectType",
+        "parkingSpaces",
+        "products",
+        "intent",
+        "leadScore",
+        "nextAction",
+        "summary",
+        "warnings",
+        "evidence"
+      ],
+      "properties": {
+        "company": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "country": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "city": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "projectType": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parkingSpaces": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "products": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "intent": {
+          "type": "string",
+          "enum": [
+            "high",
+            "medium",
+            "low",
+            "unknown"
+          ]
+        },
+        "leadScore": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "nextAction": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "field",
+              "kind",
+              "quote"
+            ],
+            "properties": {
+              "field": {
+                "type": "string",
+                "enum": [
+                  "company",
+                  "country",
+                  "city",
+                  "projectType",
+                  "parkingSpaces",
+                  "products",
+                  "intent",
+                  "leadScore"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "stated",
+                  "inferred"
+                ]
+              },
+              "quote": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

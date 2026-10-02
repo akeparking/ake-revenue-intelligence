@@ -1,4 +1,5 @@
 import { loadConfig, type AppConfig } from "../config";
+import { z } from "zod";
 
 export interface ModelSuggestion {
   provider: string;
@@ -46,12 +47,13 @@ export class MockModelAdapter implements ModelProviderAdapter {
 export class OpenAiCompatibleModelAdapter implements ModelProviderAdapter {
   constructor(private readonly config: AppConfig = loadConfig()) {}
   async healthCheck() {
-    return { healthy: Boolean(this.config.ai.baseUrl && this.config.ai.model && this.config.ai.apiKey), provider: this.config.ai.provider, model: this.config.ai.model };
+    return { healthy: false, configured: Boolean(this.config.ai.baseUrl && this.config.ai.model && this.config.ai.apiKey), status: "not_probed", provider: this.config.ai.provider, model: this.config.ai.model };
   }
   async generateStructuredSuggestion(input: Record<string, unknown>): Promise<ModelSuggestion> {
     if (!this.config.ai.baseUrl || !this.config.ai.model || !this.config.ai.apiKey) throw new Error("Model gateway configuration is incomplete");
     const response = await fetch(`${this.config.ai.baseUrl.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
+      signal: AbortSignal.timeout(20_000),
       headers: { authorization: `Bearer ${this.config.ai.apiKey}`, "content-type": "application/json" },
       body: JSON.stringify({
         model: this.config.ai.model,
@@ -65,8 +67,8 @@ export class OpenAiCompatibleModelAdapter implements ModelProviderAdapter {
     });
     if (!response.ok) throw new Error(`Model gateway request failed (${response.status})`);
     const body: any = await response.json();
-    const parsed = JSON.parse(body.choices?.[0]?.message?.content || "{}");
-    return { provider: this.config.ai.provider, autoSend: false, ...parsed } as ModelSuggestion;
+    const parsed = z.object({ summary: z.string().max(1200), intent: z.string().max(100), qualification: z.record(z.string(), z.unknown()), suggestedTags: z.array(z.string().max(100)).max(20), suggestedAction: z.string().max(600), replyDraft: z.string().max(3000), confidence: z.number().min(0).max(1), warnings: z.array(z.string().max(300)).max(12) }).parse(JSON.parse(body.choices?.[0]?.message?.content || "{}"));
+    return { ...parsed, provider: this.config.ai.provider, autoSend: false };
   }
 }
 

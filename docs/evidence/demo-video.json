@@ -1,0 +1,55 @@
+{
+  "synthetic": true,
+  "conversation_id": 7,
+  "message_id": 32,
+  "lead_id": "lead_82b7fd62-8de7-459a-9f15-fd1ec9b739ff",
+  "event_id": "qualified:ake-demo:lead_82b7fd62-8de7-459a-9f15-fd1ec9b739ff:v1",
+  "model_provider": "codex",
+  "delivery_mode": "mock",
+  "waiting_omitted": true,
+  "ok": true,
+  "duration_seconds": 160.0,
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "codec": "h264",
+  "size_bytes": 6699589,
+  "sha256": "8ddb27bdfb4f7b0f5465719cc105ea759df9aa7f8a8f27fdb53009e2185d7d7b",
+  "captions": "English burned-in captions; separate VTT available",
+  "audio": "none",
+  "chapters": [
+    {
+      "title": "Business problem",
+      "duration_seconds": 12
+    },
+    {
+      "title": "Website inquiry",
+      "duration_seconds": 24
+    },
+    {
+      "title": "AI evidence",
+      "duration_seconds": 24
+    },
+    {
+      "title": "Human review",
+      "duration_seconds": 22
+    },
+    {
+      "title": "Pipeline",
+      "duration_seconds": 18
+    },
+    {
+      "title": "Qualified",
+      "duration_seconds": 22
+    },
+    {
+      "title": "Feedback",
+      "duration_seconds": 20
+    },
+    {
+      "title": "Three scenarios",
+      "duration_seconds": 18
+    }
+  ],
+  "visual_review": "Scene transitions, source evidence, qualification form, Mock receipt and final integration states checked."
+}

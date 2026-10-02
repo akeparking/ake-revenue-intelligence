@@ -1,7 +1,10 @@
-import { getDashboard } from "../lib/api";
-import { WorkspaceClient } from "./workspace-client";
-
-export default async function Home() {
-  const { data, connected } = await getDashboard();
-  return <WorkspaceClient initialData={data} connected={connected} />;
+export default function Home() {
+  const base = process.env.NEXT_PUBLIC_BASE_PATH || "";
+  return <main className="portfolio-page"><nav><strong>AKE / AI Sales Workspace</strong><a href="https://github.com/akeparking/ake-revenue-intelligence">Source code ↗</a><a href={`${base}/workspace`}>Operator login ↗</a></nav>
+    <section className="portfolio-intro"><span className="eyebrow">Revenue operations · v0.1</span><h1>Turn an inquiry into<br />a decision you can trace.</h1><p>Overseas B2B inquiries arrive as conversations. Sales needs a clear project profile; marketing needs to know which inquiries became qualified opportunities. This workspace connects those steps.</p><div><a className="primary-button" href={`${base}/workspace`}>Open workspace</a><a className="secondary-button" href="#walkthrough">Watch the walkthrough</a></div><small>Website inbox + AI analysis + human review + CRM pipeline + Mock conversion feedback.</small></section>
+    <section className="portfolio-flow"><span>01 / Receive</span><span>02 / Understand</span><span>03 / Review</span><span>04 / Qualify</span><span>05 / Feed back</span></section>
+    <section className="portfolio-case"><div><span className="eyebrow">The business problem</span><h2>Good conversations disappear between systems.</h2></div><div><p>A project buyer describes a shopping mall, 800 spaces, and ANPR needs. Someone copies the message to a spreadsheet. A salesperson changes the deal stage. Marketing sees only the original form submission.</p><p>Here, the original message and its evidence stay linked to the Lead, the reviewed opportunity and one stable conversion event. A repeated message or button click does not create a second business result.</p></div></section>
+    <section id="walkthrough" className="portfolio-video"><span className="eyebrow">Three-minute walkthrough</span><h2>Follow one fictional project.</h2><video controls preload="metadata" poster={`${base}/showcase/workspace.png`}><source src={`${base}/showcase/demo.mp4`} type="video/mp4" /><track kind="captions" src={`${base}/showcase/demo.vtt`} srcLang="en" label="English" /></video><p>Fictional inquiries only. Website reception uses the configured AI provider; Email and WhatsApp fixtures and advertising feedback are clearly labeled Mock.</p></section>
+    <footer><span>Built around a real operating problem.</span><a href="https://github.com/akeparking/ake-revenue-intelligence#architecture">Architecture and reproducible setup ↗</a></footer>
+  </main>;
 }

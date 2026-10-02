@@ -1,8 +1,10 @@
-import { Body, Controller, Get, Inject, Post, Req } from "@nestjs/common";
-import { createNoteSchema, createOpportunitySchema, createTaskSchema } from "@ake/contracts";
+import { Body, Controller, Get, Inject, Post, Req, Param } from "@nestjs/common";
+import { createNoteSchema, createOpportunitySchema, createTaskSchema, qualifyOpportunitySchema, stageChangeSchema } from "@ake/contracts";
 import type { Request } from "express";
 import { requestUser, requestWorkspace } from "../common/http";
 import { ConversionQueueService } from "../conversion/conversion-queue.service";
+import { ConversionService } from "../conversion/conversion.service";
+import { loadConfig } from "../config";
 import { REVENUE_STORE, type RevenueStore } from "../store/store.types";
 
 @Controller("api/v1")
@@ -10,6 +12,7 @@ export class CrmController {
   constructor(
     @Inject(REVENUE_STORE) private readonly store: RevenueStore,
     private readonly queue: ConversionQueueService,
+    private readonly conversions: ConversionService,
   ) {}
 
   @Get("opportunities")
@@ -53,8 +56,20 @@ export class CrmController {
       ownerId: (body as any)?.ownerId || requestUser(request),
     });
     const result = await this.store.createOpportunity(input);
-    await this.queue.kick("opportunity-qualified").catch(() => undefined);
     return result;
+  }
+
+  @Post("opportunities/:id/qualify")
+  async qualify(@Param("id") id: string, @Body() body: unknown, @Req() request: Request) {
+    const result = await this.store.qualifyOpportunity({ ...qualifyOpportunitySchema.parse(body), workspaceId: requestWorkspace(request), actorId: requestUser(request), opportunityId: id });
+    await this.queue.kick("human-qualified").catch(() => undefined);
+    if (loadConfig().adsMode === "mock") await this.conversions.processBatch(5).catch(() => undefined);
+    return result;
+  }
+
+  @Post("opportunities/:id/stage")
+  stage(@Param("id") id: string, @Body() body: unknown, @Req() request: Request) {
+    return this.store.updateOpportunityStage({ ...stageChangeSchema.parse(body), workspaceId: requestWorkspace(request), actorId: requestUser(request), opportunityId: id });
   }
 
   @Get("dashboard")
